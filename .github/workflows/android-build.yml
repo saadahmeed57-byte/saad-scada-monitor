@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,13 +26,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android
-        uses: android-actions/setup-android@v3
-                with:
-          packages: 'platform-tools'
+      - name: Setup Android SDK
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-      - name: Install SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -38,27 +45,41 @@ jobs:
       - name: Extract project
         run: |
           mkdir -p work
-          ZIP_FILE=$(find . -maxdepth 1 -iname '*.zip' | head -n 1)
+
+          ZIP_FILE=$(find . -maxdepth 1 -iname '*.zip' -print -quit)
+
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: Project ZIP not found"
             exit 1
           fi
+
           unzip -q "$ZIP_FILE" -d work
-          PROJECT_DIR=$(find work -name settings.gradle -o -name settings.gradle.kts | head -n 1 | xargs dirname)
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Gradle project not found"
+
+          PROJECT_FILE=$(find work -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: Android project not found"
             exit 1
           fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Fix Kotlin JVM Target
+          echo "Project found: $PROJECT_DIR"
+
+      - name: Fix Java Kotlin compatibility
         run: |
-          cat > "$RUNNER_TEMP/fix-jvm.gradle" <<'EOF'
-          allprojects {
-              tasks.configureEach { task ->
-                  if (task.class.name.contains("KotlinCompile") &&
-                      task.hasProperty("kotlinOptions")) {
-                      task.kotlinOptions.jvmTarget = "1.8"
+          cat > "$RUNNER_TEMP/java17.gradle" <<'EOF'
+          gradle.projectsEvaluated {
+              allprojects {
+                  tasks.withType(
+                      org.gradle.api.tasks.compile.JavaCompile
+                  ).configureEach {
+                      sourceCompatibility = '17'
+                      targetCompatibility = '17'
                   }
               }
           }
@@ -66,12 +87,18 @@ jobs:
 
       - name: Build APK
         run: |
-          gradle --no-daemon \
-            --init-script "$RUNNER_TEMP/fix-jvm.gradle" \
-            -p "$PROJECT_DIR" assembleDebug
+          cd "$PROJECT_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew -I "$RUNNER_TEMP/java17.gradle" assembleDebug
+          else
+            gradle -I "$RUNNER_TEMP/java17.gradle" assembleDebug
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SAAD-SCADA-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
