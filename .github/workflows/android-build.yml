@@ -46,7 +46,7 @@ jobs:
         run: |
           mkdir -p work
 
-          ZIP_FILE=$(find . -maxdepth 1 -iname '*.zip' -print -quit)
+          ZIP_FILE="./SAAD_SCADA_GAS_COMPRESSION_INTERACTIVE.zip"
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: Project ZIP not found"
