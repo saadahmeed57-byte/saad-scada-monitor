@@ -46,7 +46,7 @@ jobs:
         run: |
           mkdir -p work
 
-          ZIP_FILE="./SAAD_SCADA_GAS_COMPRESSION_INTERACTIVE.zip"
+          ZIP_FILE="./SAAD_SCADA_GAS_COMPRESSION_ICON_FLAME_TOWER.zip"
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: Project ZIP not found"
